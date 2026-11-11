@@ -559,15 +559,6 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
     </div>
 
     <div class="settings-section">
-      <h3>Import browser bookmarks</h3>
-      <p class="muted" style="font-size:15px">Run once on your computer, inside a clone of the papers repo. Bookmark dates become the “added” dates, so your history is kept.</p>
-      <pre class="code">python3 scripts/import_bookmarks.py bookmarks.html --dry-run
-python3 scripts/import_bookmarks.py bookmarks.html --folder "Papers" --folder-tags
-git commit -am "Import bookmarks" &amp;&amp; git push</pre>
-      <p class="meta">Chrome: ~/.config/google-chrome/Default/Bookmarks works directly.</p>
-    </div>
-
-    <div class="settings-section">
       <h3>Export</h3>
       <div class="row">
         <button class="btn small" type="button" id="export-json">papers.json</button>
@@ -1104,7 +1095,7 @@ function renderList() {
   if (!state.papers.length) {
     root.replaceChildren(h('div', { class: 'empty' },
       h('h3', { style: 'margin:0;font-family:var(--font-display);font-weight:500;font-size:22px', text: 'No papers yet' }),
-      h('p', { class: 'muted', text: 'Add a link with “Add paper”, use the bookmarklet, or run the one-time bookmark import (see Settings).' }),
+      h('p', { class: 'muted', text: 'Add a link with “Add paper” or the bookmarklet (see Settings).' }),
       h('div', {}, h('button', { class: 'btn', type: 'button', onclick: () => openAdd(), text: 'Add paper' }))));
     return;
   }
