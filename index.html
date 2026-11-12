@@ -310,6 +310,19 @@ section.block { padding-top: var(--space-8); }
 .show-more { margin-top: var(--space-4); }
 .empty { padding: var(--space-8) 0; max-width: 65ch; display: grid; gap: var(--space-3); }
 
+/* ---------- suggestions ---------- */
+.sugg { border-bottom: 1px solid var(--color-line); padding: var(--space-5) 0; display: grid; grid-template-columns: 1fr auto; gap: var(--space-2) var(--space-5); align-items: start; }
+.sugg:first-child { border-top: 1px solid var(--color-line); }
+.sugg h4 { margin: 0; font-family: var(--font-body); font-weight: 500; font-size: 18px; line-height: 1.3; letter-spacing: -0.01em; }
+.sugg h4 a { color: var(--color-text); text-decoration: none; transition: color var(--duration) var(--ease); }
+.sugg h4 a:hover { color: var(--color-accent-strong); }
+.sugg .authors { font-size: 15px; color: var(--color-muted); margin-top: var(--space-1); }
+.sugg .actions { display: flex; gap: var(--space-3); align-items: center; }
+.sugg-intro { max-width: 65ch; font-size: 15px; margin-bottom: var(--space-5); }
+@media (max-width: 759px) { .sugg { grid-template-columns: 1fr; } }
+.cited { font-family: var(--font-mono); font-size: 12px; color: var(--color-accent-strong); }
+.toggle .count { font-family: var(--font-mono); font-size: 12px; opacity: .8; }
+
 /* ---------- connect screen ---------- */
 .connect { min-height: 100vh; display: grid; align-items: center; padding: var(--space-8) 0; }
 .connect .inner { max-width: 560px; display: grid; gap: var(--space-5); }
@@ -463,9 +476,24 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
         <p class="meta" style="margin-top:var(--space-3)">Click a bar to show only that month.</p>
       </section>
 
+      <section class="block" aria-labelledby="sugg-h" id="sugg-section" hidden>
+        <div class="chart-head">
+          <div class="section-head" style="margin:0">
+            <span class="label">03 — Suggestions</span>
+            <h2 id="sugg-h">Worth reading next</h2>
+          </div>
+          <div class="row">
+            <span class="meta" id="sugg-updated"></span>
+            <button type="button" class="btn small" id="sugg-refresh">Refresh</button>
+          </div>
+        </div>
+        <p class="muted sugg-intro">Papers that several of your saved papers cite, and recommendations from Semantic Scholar based on what you've read or starred.</p>
+        <div id="sugg-list"></div>
+      </section>
+
       <section class="block" aria-labelledby="list-h">
         <div class="section-head">
-          <span class="label">03 — History</span>
+          <span class="label">04 — History</span>
           <h2 id="list-h">Everything saved</h2>
         </div>
         <div class="filters">
@@ -475,12 +503,16 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
               <button type="button" class="toggle" id="starred-toggle" aria-pressed="false">
                 <svg aria-hidden="true" fill="none"><use href="#i-star"/></svg>Starred
               </button>
+              <button type="button" class="toggle" id="review-toggle" aria-pressed="false" hidden>
+                Needs review <span class="count" id="review-count"></span>
+              </button>
             </div>
             <label class="sort">Sort
               <select id="sort">
                 <option value="added">Recently added</option>
                 <option value="published">Publication date</option>
                 <option value="title">Title</option>
+                <option value="cited">Most cited in library</option>
               </select>
             </label>
           </div>
@@ -618,6 +650,8 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
 const CFG_KEY = 'papers-dashboard:config';
 const UI_KEY = 'papers-dashboard:ui';
 const API = 'https://api.github.com';
+const INSIGHTS_WORKFLOW = 'insights.yml';
+let writeChain = Promise.resolve();
 const STATUSES = ['unread', 'reading', 'read'];
 const STATUS_LABEL = { unread: 'Unread', reading: 'Reading', read: 'Read' };
 const COURSE_STATUS_LABEL = { unread: 'Not started', reading: 'In progress', read: 'Done' };
@@ -644,6 +678,11 @@ const state = {
   papers: [],
   sha: null,
   loaded: false,
+  insights: null,      // data/insights.json (cited_by, suggestions), written by the Insights workflow
+  dismissed: [],       // data/dismissed.json: Semantic Scholar ids of dismissed suggestions
+  citedBy: new Map(),  // paper id -> [papers in the library that cite it]
+  review: false,
+  suggShown: 6,
   q: '', status: 'all', starred: false, tags: new Set(), month: null,
   sort: ui.sort || 'added',
   type: TYPES.includes(ui.type) ? ui.type : 'all',
@@ -761,29 +800,52 @@ function b64encodeUtf8(str) {
   return btoa(bin);
 }
 
-async function readFile() {
-  const p = `${repoPath()}/contents/${enc(cfg.path)}?ref=${encodeURIComponent(cfg.branch)}`;
+// Files next to papers.json in the data repo (insights.json, dismissed.json).
+function siblingPath(name) { const i = cfg.path.lastIndexOf('/'); return (i >= 0 ? cfg.path.slice(0, i + 1) : '') + name; }
+
+async function readJSON(path, fallback) {
+  const p = `${repoPath()}/contents/${enc(path)}?ref=${encodeURIComponent(cfg.branch)}`;
   let meta;
   try { meta = await (await gh(p)).json(); }
-  catch (e) { if (e.status === 404) return { papers: [], sha: null, missing: true }; throw e; }
+  catch (e) { if (e.status === 404) return { data: fallback, sha: null, missing: true }; throw e; }
   let text;
   if (meta.content && meta.encoding === 'base64') text = b64decodeUtf8(meta.content);
   else text = await (await gh(p, { headers: { Accept: 'application/vnd.github.raw+json' } })).text(); // > 1 MB
-  const papers = text.trim() ? JSON.parse(text) : [];
-  if (!Array.isArray(papers)) throw new Error(`${cfg.path} is not a JSON array`);
-  return { papers, sha: meta.sha };
+  return { data: text.trim() ? JSON.parse(text) : fallback, sha: meta.sha };
 }
-
-async function writeFile(papers, sha, message) {
-  const body = { message, content: b64encodeUtf8(JSON.stringify(papers, null, 2) + '\n'), branch: cfg.branch };
+async function writeJSON(path, data, sha, message) {
+  const body = { message, content: b64encodeUtf8(JSON.stringify(data, null, 2) + '\n'), branch: cfg.branch };
   if (sha) body.sha = sha;
-  const res = await gh(`${repoPath()}/contents/${enc(cfg.path)}`, { method: 'PUT', body: JSON.stringify(body) });
+  const res = await gh(`${repoPath()}/contents/${enc(path)}`, { method: 'PUT', body: JSON.stringify(body) });
   return (await res.json()).content.sha;
+}
+async function readFile() {
+  const { data, sha, missing } = await readJSON(cfg.path, []);
+  if (!Array.isArray(data)) throw new Error(`${cfg.path} is not a JSON array`);
+  return { papers: data, sha, missing };
+}
+function writeFile(papers, sha, message) { return writeJSON(cfg.path, papers, sha, message); }
+
+// Read-modify-write of a small JSON file other than papers.json, serialized with the other writes.
+function updateJSON(path, fallback, fn, message) {
+  const job = writeChain.then(async () => {
+    for (let attempt = 0; attempt < 6; attempt++) {
+      const { data, sha } = await readJSON(path, fallback);
+      const next = fn(structuredClone(data));
+      try { await writeJSON(path, next, sha, message + ' [skip ci]'); return next; }
+      catch (e) {
+        if (e.status === 409 || e.status === 422) { await sleep(400 * (attempt + 1) + Math.random() * 400); continue; }
+        throw e;
+      }
+    }
+    throw new Error('Could not save after several attempts.');
+  });
+  writeChain = job.catch(() => {});
+  return job;
 }
 
 // Writes are serialized, and each one re-reads the latest file so commits
 // made by the workflow in the meantime are never clobbered.
-let writeChain = Promise.resolve();
 function mutate(fn, message) {
   // Optimistic local update first.
   const local = fn(structuredClone(state.papers));
@@ -824,8 +886,15 @@ function updatePaper(id, patch, message) {
 // =====================================================================
 // Loading
 // =====================================================================
+async function loadInsights() {
+  try {
+    const [ins, dis] = await Promise.all([readJSON(siblingPath('insights.json'), null), readJSON(siblingPath('dismissed.json'), [])]);
+    state.insights = ins.data && typeof ins.data === 'object' ? ins.data : null;
+    state.dismissed = Array.isArray(dis.data) ? dis.data : [];
+  } catch { /* insights are optional */ }
+}
 async function reload() {
-  const { papers, sha } = await readFile();
+  const [{ papers, sha }] = await Promise.all([readFile(), loadInsights()]);
   state.papers = papers.filter(p => p && typeof p === 'object' && p.id);
   state.sha = sha;
   state.loaded = true;
@@ -931,6 +1000,7 @@ function filtered({ ignoreStatus = false } = {}) {
   return ofType().filter(p => {
     if (!ignoreStatus && state.status !== 'all' && (p.status || 'unread') !== state.status) return false;
     if (state.starred && !p.starred) return false;
+    if (state.review && !p.needs_review) return false;
     if (state.month && monthKey(p.added) !== state.month) return false;
     for (const t of state.tags) if (!(p.tags || []).includes(t)) return false;
     if (terms.length) { const hs = haystack(p); if (!terms.every(t => hs.includes(t))) return false; }
@@ -942,6 +1012,7 @@ function sortPapers(list) {
   const out = [...list];
   if (state.sort === 'title') out.sort((a, b) => (a.title || '').localeCompare(b.title || '', undefined, { sensitivity: 'base' }));
   else if (state.sort === 'published') out.sort((a, b) => pubKey(b).localeCompare(pubKey(a)) || (b.added || '').localeCompare(a.added || ''));
+  else if (state.sort === 'cited') out.sort((a, b) => (state.citedBy.get(b.id) || []).length - (state.citedBy.get(a.id) || []).length || (b.added || '').localeCompare(a.added || ''));
   else out.sort((a, b) => (b.added || '').localeCompare(a.added || ''));
   return out;
 }
@@ -949,12 +1020,22 @@ function sortPapers(list) {
 // =====================================================================
 // Rendering
 // =====================================================================
+function computeCitedBy() {
+  const byId = new Map(state.papers.map(p => [p.id, p]));
+  state.citedBy = new Map();
+  for (const [id, citers] of Object.entries((state.insights && state.insights.cited_by) || {})) {
+    const list = (citers || []).map(c => byId.get(c)).filter(Boolean);
+    if (byId.has(id) && list.length) state.citedBy.set(id, list);
+  }
+}
 function render() {
   if (!state.loaded) return;
+  computeCitedBy();
   renderTypes();
   renderStats();
   renderChart();
   renderFilters();
+  renderSuggestions();
   renderList();
   renderTagOptions();
 }
@@ -983,9 +1064,12 @@ function renderStats() {
   const tile = (label, num, sub) => h('div', { class: 'stat' },
     h('div', { class: 'meta', text: label }),
     h('div', { class: 'num', text: num.toLocaleString() }),
-    h('div', { class: 'sub', text: sub || ' ' }));
+    sub instanceof Node ? h('div', { class: 'sub' }, sub) : h('div', { class: 'sub', text: sub || '\u00a0' }));
+  const reviewLink = h('button', { type: 'button', class: 'linkish', onclick: () => {
+    state.review = true; state.shown = {}; render(); $('#list-h').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } }, `${review} need review`);
   $('#stats').replaceChildren(
-    tile(cap(TYPE_NAME[state.type][1]), ps.length, review ? `${review} need review` : `${ps.filter(p => p.starred).length} starred`),
+    tile(cap(TYPE_NAME[state.type][1]), ps.length, review ? reviewLink : `${ps.filter(p => p.starred).length} starred`),
     tile(L('unread'), count('unread'), ps.length ? `${Math.round(100 * count('unread') / ps.length)}% of all` : ''),
     tile(L('read'), count('read'), `${count('reading')} in progress`),
     tile('Added this month', thisMonth, `${lastMonth} last month`));
@@ -1104,6 +1188,10 @@ function renderFilters() {
   }, st === 'all' ? 'All' : statusLabel(st, state.type), h('span', { class: 'count', text: counts[st] }))));
 
   $('#starred-toggle').setAttribute('aria-pressed', String(state.starred));
+  const nReview = ofType().filter(p => p.needs_review).length;
+  $('#review-toggle').hidden = !nReview && !state.review;
+  $('#review-toggle').setAttribute('aria-pressed', String(state.review));
+  $('#review-count').textContent = nReview;
 
   // Tag "chips": plain mono text joined by middle dots.
   const tagCounts = new Map();
@@ -1132,7 +1220,7 @@ function renderFilters() {
   af.hidden = !chips.length;
   if (chips.length) af.replaceChildren(h('span', { class: 'meta', text: 'Showing' }), ...chips,
     h('button', { type: 'button', class: 'linkish', text: 'Clear all', onclick: () => {
-      state.month = null; state.tags.clear(); state.q = ''; $('#q').value = ''; state.status = 'all'; state.starred = false; state.shown = {}; render();
+      state.month = null; state.tags.clear(); state.q = ''; $('#q').value = ''; state.status = 'all'; state.starred = false; state.review = false; state.shown = {}; render();
     } }));
 }
 
@@ -1141,6 +1229,7 @@ function groupsFor(list) {
   const add = (key, title, p) => { if (!groups.has(key)) groups.set(key, { key, title, items: [] }); groups.get(key).items.push(p); };
   if (state.sort === 'added') for (const p of list) add(monthKey(p.added), monthName(monthKey(p.added)), p);
   else if (state.sort === 'published') for (const p of list) { const y = p.year || (p.date || '').slice(0, 4); add('y' + (y || '?'), y ? `Published ${y}` : 'Publication date unknown', p); }
+  else if (state.sort === 'cited') for (const p of list) add('cited', 'By citations in your library', p);
   else for (const p of list) add('all', 'A–Z', p);
   return [...groups.values()];
 }
@@ -1210,6 +1299,10 @@ function paperRow(p) {
       state.type === 'all' ? h('span', { class: 'type-label', text: cap(type) }) : null,
       venueYear || null,
       type === 'paper' || /^(arxiv|doi|openreview|acl|pmid):/.test(p.id) ? p.id : null,
+      state.citedBy.has(p.id) ? h('span', {
+        class: 'cited', title: 'Cited by: ' + state.citedBy.get(p.id).map(c => c.title).join('; '),
+        text: `cited by ${state.citedBy.get(p.id).length} in library`,
+      }) : null,
       p.needs_review ? h('span', { class: 'flag', text: 'needs review' }) : null,
     ])),
     h('h4', {}, extLink(p.url || p.source_url, p.title || p.source_url || p.id)),
@@ -1255,6 +1348,8 @@ function paperDetails(p, st, type) {
   return h('div', { class: 'details' },
     p.abstract ? h('p', { class: 'abstract', text: p.abstract }) : h('p', { class: 'meta', text: 'No abstract.' }),
     p.note ? h('p', { class: 'note', text: p.note }) : null,
+    state.citedBy.has(p.id) ? h('p', { class: 'meta' }, 'Cited in your library by ',
+      ...joinDots(state.citedBy.get(p.id).map(c => extLink(c.url || c.source_url, short(c.title))))) : null,
     h('div', { class: 'actions' },
       seg,
       pdf ? h('a', { class: 'btn small ext', href: pdf, target: '_blank', rel: 'noopener noreferrer', text: 'Open PDF' }) : null,
@@ -1396,7 +1491,7 @@ $('#add-dlg').addEventListener('close', async () => {
     note: $('#add-note').value.trim(),
     status: $('#add-status').value,
     type: $('#add-type').value,
-    request_id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+    request_id: newRequestId(),
   };
   ui.addType = inputs.type; saveJSON(UI_KEY, ui);
   startJob(inputs, urls.length);
@@ -1406,13 +1501,7 @@ $('#add-form').addEventListener('submit', (e) => {
 });
 
 async function startJob(inputs, n) {
-  const card = h('div', { class: 'job', role: 'status' });
-  const title = h('strong', { style: 'font-weight:500', text: `Fetching metadata for ${noun(n, inputs.type)}` });
-  const sub = h('span', { class: 'meta', text: 'Starting workflow…' });
-  const close = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', onclick: () => card.remove() }, icon('i-x'));
-  const link = h('span');
-  card.append(h('div', { class: 'row' }, title, close), h('div', { class: 'bar' }), h('div', { class: 'row' }, sub, link));
-  $('#dock').append(card);
+  const { card, title, sub, link } = jobCard(`Fetching metadata for ${noun(n, inputs.type)}`);
   const since = new Date(Date.now() - 60_000).toISOString();
   const dispatch = body => gh(`${repoPath()}/actions/workflows/${encodeURIComponent(cfg.workflow)}/dispatches`, {
     method: 'POST', body: JSON.stringify({ ref: cfg.branch, inputs: body }),
@@ -1432,34 +1521,158 @@ async function startJob(inputs, n) {
     return;
   }
   sub.textContent = 'Queued…';
+  const run = await waitForRun(cfg.workflow, r => (r.display_title || r.name || '').includes(inputs.request_id), since, (r, err) => {
+    if (err) { sub.textContent = `Checking… (${err.message})`; return; }
+    if (!link.firstChild) link.append(extLink(r.html_url, 'View run', 'ext mono'));
+    if (r.status !== 'completed') sub.textContent = r.status === 'in_progress' ? 'Running…' : 'Queued…';
+  });
+  if (!run) { sub.textContent = 'Still running. Reload later.'; return; }
+  if (run.conclusion === 'success') {
+    const before = new Set(state.papers.map(p => p.id));
+    try { await reload(); } catch {}
+    const added = state.papers.filter(p => !before.has(p.id));
+    const review = added.filter(p => p.needs_review).length;
+    card.classList.add('done');
+    title.textContent = added.length ? `Added ${noun(added.length, inputs.type)}` : 'Done, nothing new';
+    sub.textContent = review ? `${review} saved without metadata (needs review)` : added.length ? short(added[0].title) : 'Already in your history.';
+    setTimeout(() => card.remove(), 12000);
+    followInsights(new Date(Date.now() - 30_000).toISOString());
+  } else {
+    card.classList.add('failed');
+    title.textContent = 'The workflow failed';
+    sub.textContent = `Conclusion: ${run.conclusion}. Check the run log.`;
+  }
+}
+
+// =====================================================================
+// Suggestions (computed by the Insights workflow in the data repo)
+// =====================================================================
+function visibleSuggestions() {
+  const arxiv = new Set(state.papers.map(p => p.arxiv).filter(Boolean));
+  const doi = new Set(state.papers.map(p => (p.doi || '').toLowerCase()).filter(Boolean));
+  const dismissed = new Set(state.dismissed);
+  return ((state.insights && state.insights.suggestions) || []).filter(x =>
+    x && x.s2 && x.title && !dismissed.has(x.s2) && !(x.arxiv && arxiv.has(x.arxiv)) && !(x.doi && doi.has(x.doi)));
+}
+function renderSuggestions() {
+  const section = $('#sugg-section');
+  section.hidden = !(state.type === 'all' || state.type === 'paper');
+  if (section.hidden) return;
+  const ins = state.insights;
+  $('#sugg-updated').textContent = ins && ins.updated ? `Updated ${fmtDate(ins.updated)}` : '';
+  const list = visibleSuggestions();
+  const root = $('#sugg-list');
+  if (!list.length) {
+    root.replaceChildren(h('p', { class: 'meta', text: ins
+      ? 'No suggestions right now. They appear once several of your papers cite the same work, or after you mark papers as read.'
+      : 'No suggestions yet. They are computed by the Insights workflow after you add papers, or click Refresh.' }));
+    return;
+  }
+  const byId = new Map(state.papers.map(p => [p.id, p]));
+  const rows = list.slice(0, state.suggShown).map(x => {
+    const citers = (x.cited_by || []).map(id => byId.get(id)).filter(Boolean);
+    const n = citers.length;
+    const reason = n
+      ? h('span', { class: 'label', title: 'Cited by: ' + citers.map(c => c.title).join('; '), text: `Cited by ${n} of your papers` })
+      : h('span', { class: 'label', text: 'Recommended for you' });
+    const venueYear = [x.venue, x.year].filter(Boolean).join(' ');
+    const addBtn = h('button', { type: 'button', class: 'btn small', onclick: () => {
+      addBtn.disabled = true; addBtn.textContent = 'Adding…';
+      startJob({ urls: x.url, tags: '', note: '', status: 'unread', type: 'paper', request_id: newRequestId() }, 1);
+    } }, 'Add to library');
+    return h('article', { class: 'sugg' },
+      h('div', {},
+        h('div', { class: 'meta-line' }, ...joinDots([
+          reason,
+          n && x.recommended ? 'also recommended' : null,
+          venueYear || null,
+          x.citations ? `${Number(x.citations).toLocaleString()} citations` : null,
+        ])),
+        h('h4', {}, extLink(x.url, x.title)),
+        x.authors && x.authors.length ? h('p', { class: 'authors', text: authorsText(x.authors) }) : null),
+      h('div', { class: 'actions' },
+        addBtn,
+        h('button', { type: 'button', class: 'linkish', onclick: () => dismissSuggestion(x) }, 'Dismiss')));
+  });
+  if (list.length > state.suggShown) rows.push(h('div', { class: 'show-more' }, h('button', {
+    type: 'button', class: 'linkish', onclick: () => { state.suggShown = list.length; renderSuggestions(); },
+  }, `Show ${list.length - state.suggShown} more`)));
+  root.replaceChildren(...rows);
+}
+function dismissSuggestion(x) {
+  state.dismissed = [...state.dismissed, x.s2];
+  renderSuggestions();
+  updateJSON(siblingPath('dismissed.json'), [], arr => [...new Set([...(Array.isArray(arr) ? arr : []), x.s2])],
+    `Dismiss suggestion: ${short(x.title)}`)
+    .then(arr => { state.dismissed = arr; })
+    .catch(e => { toast(`Couldn't save: ${e.message}`, true); state.dismissed = state.dismissed.filter(d => d !== x.s2); renderSuggestions(); });
+}
+
+function newRequestId() { return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function jobCard(text) {
+  const card = h('div', { class: 'job', role: 'status' });
+  const title = h('strong', { style: 'font-weight:500', text });
+  const sub = h('span', { class: 'meta', text: 'Starting workflow…' });
+  const link = h('span');
+  card.append(h('div', { class: 'row' }, title,
+      h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', onclick: () => card.remove() }, icon('i-x'))),
+    h('div', { class: 'bar' }), h('div', { class: 'row' }, sub, link));
+  $('#dock').append(card);
+  return { card, title, sub, link };
+}
+// Poll a workflow's runs every 5 s until the matching run completes (or 20 min pass).
+async function waitForRun(workflow, match, since, onUpdate) {
   const started = Date.now();
   let run = null;
   while (Date.now() - started < 20 * 60_000) {
     await sleep(5000);
     try {
-      const res = await (await gh(`${repoPath()}/actions/workflows/${encodeURIComponent(cfg.workflow)}/runs?event=workflow_dispatch&per_page=20&created=%3E%3D${encodeURIComponent(since)}`)).json();
-      run = (res.workflow_runs || []).find(r => (r.display_title || r.name || '').includes(inputs.request_id)) || run;
-    } catch (e) { sub.textContent = `Checking… (${e.message})`; continue; }
+      const res = await (await gh(`${repoPath()}/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=20&created=%3E%3D${encodeURIComponent(since)}`)).json();
+      run = (res.workflow_runs || []).find(match) || run;
+    } catch (e) { if (onUpdate) onUpdate(null, e); continue; }
     if (!run) continue;
-    if (!link.firstChild) link.append(extLink(run.html_url, 'View run', 'ext mono'));
-    if (run.status !== 'completed') { sub.textContent = run.status === 'in_progress' ? 'Running…' : 'Queued…'; continue; }
-    if (run.conclusion === 'success') {
-      const before = new Set(state.papers.map(p => p.id));
-      try { await reload(); } catch {}
-      const added = state.papers.filter(p => !before.has(p.id));
-      const review = added.filter(p => p.needs_review).length;
-      card.classList.add('done');
-      title.textContent = added.length ? `Added ${noun(added.length, inputs.type)}` : 'Done, nothing new';
-      sub.textContent = review ? `${review} saved without metadata (needs review)` : added.length ? short(added[0].title) : 'Already in your history.';
-      setTimeout(() => card.remove(), 12000);
-    } else {
-      card.classList.add('failed');
-      title.textContent = 'The workflow failed';
-      sub.textContent = `Conclusion: ${run.conclusion}. Check the run log.`;
-    }
+    if (onUpdate) onUpdate(run);
+    if (run.status === 'completed') return run;
+  }
+  return null;
+}
+async function refreshInsights() {
+  const btn = $('#sugg-refresh');
+  btn.disabled = true;
+  const { card, title, sub, link } = jobCard('Refreshing suggestions');
+  const request_id = newRequestId();
+  const since = new Date(Date.now() - 60_000).toISOString();
+  try {
+    await gh(`${repoPath()}/actions/workflows/${INSIGHTS_WORKFLOW}/dispatches`, {
+      method: 'POST', body: JSON.stringify({ ref: cfg.branch, inputs: { request_id } }),
+    });
+  } catch (e) {
+    card.classList.add('failed'); btn.disabled = false;
+    sub.textContent = e.status === 404 ? `Workflow ${INSIGHTS_WORKFLOW} not found in the data repo.` : e.message;
     return;
   }
-  sub.textContent = 'Still running. Reload later.';
+  sub.textContent = 'Queued…';
+  const run = await waitForRun(INSIGHTS_WORKFLOW, r => (r.display_title || '').includes(request_id), since, (r, err) => {
+    if (err) { sub.textContent = `Checking… (${err.message})`; return; }
+    if (!link.firstChild) link.append(extLink(r.html_url, 'View run', 'ext mono'));
+    sub.textContent = r.status === 'in_progress' ? 'Looking up references…' : 'Queued…';
+  });
+  btn.disabled = false;
+  if (run && run.conclusion === 'success') {
+    await loadInsights(); render();
+    card.classList.add('done'); title.textContent = 'Suggestions updated';
+    sub.textContent = plural(visibleSuggestions().length, 'suggestion');
+    setTimeout(() => card.remove(), 8000);
+  } else {
+    card.classList.add('failed');
+    title.textContent = run ? 'The insights workflow failed' : 'Still running';
+    sub.textContent = run ? `Conclusion: ${run.conclusion}. Check the run log.` : 'Reload later.';
+  }
+}
+// After an add, the Insights workflow runs on its own; pick up its result quietly.
+async function followInsights(since) {
+  const run = await waitForRun(INSIGHTS_WORKFLOW, r => r.event === 'workflow_run', since);
+  if (run && run.conclusion === 'success') { await loadInsights(); render(); }
 }
 
 function toast(text, isError) {
@@ -1567,6 +1780,8 @@ $('#q').addEventListener('input', e => {
   qTimer = setTimeout(() => { state.q = e.target.value.trim(); state.shown = {}; render(); }, 120);
 });
 $('#starred-toggle').addEventListener('click', () => { state.starred = !state.starred; state.shown = {}; render(); });
+$('#review-toggle').addEventListener('click', () => { state.review = !state.review; state.shown = {}; render(); });
+$('#sugg-refresh').addEventListener('click', refreshInsights);
 $('#sort').value = state.sort;
 $('#sort').addEventListener('change', e => { state.sort = e.target.value; ui.sort = state.sort; saveJSON(UI_KEY, ui); state.shown = {}; render(); });
 $('#range-seg').addEventListener('click', e => {
