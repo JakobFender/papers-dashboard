@@ -1,6 +1,6 @@
 # papers-dashboard
 
-A personal dashboard of research papers I've saved, served by GitHub Pages.
+A personal library of the papers, books, courses and articles I've saved, served by GitHub Pages.
 
 This repo is a public **shell with no data**: one static `index.html` with all HTML, CSS
 and JS inline and no build step. The papers live in a separate **private** repo. The page
@@ -19,13 +19,14 @@ a token see only the "connect your repo" screen.
 
 ## Features
 
-- Stats: total papers, unread, read (with the number in progress), added this month.
+- A type filter (All · Papers · Books · Courses · Articles) that scopes everything below it. Courses use Not started / In progress / Done.
+- Stats: total, unread, read (with the number in progress), added this month.
 - "Added per month" chart (last 24 months or all time). Click a bar to filter to that month.
 - Search across titles, authors, abstracts, tags and notes (press `/` to focus it).
 - Filter by status, starred and tags. Sort by date added, publication date or title.
 - History grouped by the month each paper was saved.
 - Per paper: change status, star, open the PDF, copy BibTeX, edit tags, note and metadata, remove.
-- **Add paper** dispatches the `add-paper.yml` workflow in the data repo and shows its progress.
+- **Add paper** (with a Type field) dispatches the `add-paper.yml` workflow in the data repo and shows its progress.
 - Bookmarklet (`?add=<url>` opens the Add dialog with the link filled in), a curl snippet, and export as JSON or BibTeX in Settings.
 - Works on phones (one column, floating Add button) and follows the system's dark mode.
 

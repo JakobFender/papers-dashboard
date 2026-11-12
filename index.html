@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex, nofollow">
 <!-- Only GitHub's API, Google Fonts and this page itself can be reached. No third-party scripts. -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; connect-src https://api.github.com; img-src data:; base-uri 'none'; form-action 'none'">
-<title>Paper history</title>
+<title>Library</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Besley:wght@500&family=Onest:wght@400;500&family=Martian+Mono&display=swap">
@@ -170,6 +170,15 @@ main { padding-bottom: var(--space-9); }
 section.block { padding-top: var(--space-8); }
 @media (min-width: 760px) { section.block { padding-top: var(--space-9); } }
 .section-head { display: grid; gap: var(--space-2); margin-bottom: var(--space-5); }
+
+/* ---------- type bar ---------- */
+.typebar { padding-top: var(--space-6); }
+.typebar .seg button { padding: var(--space-2) var(--space-4); }
+@media (max-width: 759px) {
+  .typebar .seg { display: flex; width: 100%; overflow-x: auto; }
+  .typebar .seg button { flex: 1 0 auto; }
+}
+.type-label { font-family: var(--font-mono); font-size: 12px; color: var(--color-text); }
 
 /* ---------- stats ---------- */
 .stats {
@@ -388,9 +397,9 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
     <div class="inner">
       <div class="section-head">
         <span class="label">00 — Connect</span>
-        <h1>Paper history</h1>
+        <h1>Library</h1>
       </div>
-      <p class="muted">This page is an empty shell. The papers live in a private GitHub repository and are loaded in your browser with a fine-grained access token that never leaves this device.</p>
+      <p class="muted">This page is an empty shell. Everything lives in a private GitHub repository and are loaded in your browser with a fine-grained access token that never leaves this device.</p>
       <form id="connect-form" class="stack" autocomplete="off"></form>
     </div>
   </div>
@@ -401,7 +410,7 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
     <div class="wrap">
       <div class="brand">
         <span class="label" id="repo-label">papers</span>
-        <h1>Paper history</h1>
+        <h1>Library</h1>
       </div>
       <label class="search">
         <span class="sr-only">Search papers</span>
@@ -422,6 +431,9 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
   <main class="wrap">
     <div id="loading" class="loading">Loading papers…</div>
     <div id="content" hidden>
+      <nav class="typebar" aria-label="Show">
+        <div class="seg" role="group" aria-label="Filter by type" id="type-seg"></div>
+      </nav>
       <section class="block" aria-labelledby="overview-h">
         <div class="section-head">
           <span class="label">01 — Overview</span>
@@ -448,7 +460,7 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
       <section class="block" aria-labelledby="list-h">
         <div class="section-head">
           <span class="label">03 — History</span>
-          <h2 id="list-h">Saved papers</h2>
+          <h2 id="list-h">Everything saved</h2>
         </div>
         <div class="filters">
           <div class="row">
@@ -480,7 +492,7 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
 <dialog id="add-dlg" aria-labelledby="add-title">
   <form method="dialog" id="add-form">
     <div class="dlg-head">
-      <div class="section-head" style="margin:0"><span class="label">Add</span><h2 id="add-title">Add papers</h2></div>
+      <div class="section-head" style="margin:0"><span class="label">Add</span><h2 id="add-title">Add to library</h2></div>
       <button class="icon-btn" value="cancel" formnovalidate aria-label="Close"><svg aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div class="dlg-body">
@@ -489,11 +501,10 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
         <small>One per line. arXiv, DOI, OpenReview, ACL Anthology, PubMed or any paper page.</small>
       </label>
       <div class="grid-2">
-        <label class="field"><span>Tags</span><input id="add-tags" type="text" placeholder="llm, systems" list="tag-options"></label>
-        <label class="field"><span>Status</span>
-          <select id="add-status"><option value="unread">Unread</option><option value="reading">Reading</option><option value="read">Read</option></select>
-        </label>
+        <label class="field"><span>Type</span><select id="add-type"><option value="paper">Paper</option><option value="book">Book</option><option value="course">Course</option><option value="article">Article</option></select></label>
+        <label class="field"><span>Status</span><select id="add-status"></select></label>
       </div>
+      <label class="field"><span>Tags</span><input id="add-tags" type="text" placeholder="optional, added automatically" list="tag-options"></label>
       <label class="field"><span>Note</span><textarea id="add-note" rows="3"></textarea></label>
       <p class="meta" id="add-dupes" hidden></p>
     </div>
@@ -514,6 +525,7 @@ details.more[open] > summary { margin-bottom: var(--space-4); }
     </div>
     <div class="dlg-body">
       <p id="edit-paper" style="font-weight:500"></p>
+      <label class="field"><span>Type</span><select id="edit-type"><option value="paper">Paper</option><option value="book">Book</option><option value="course">Course</option><option value="article">Article</option></select></label>
       <label class="field"><span>Tags</span><input id="edit-tags" type="text" placeholder="comma separated" list="tag-options"></label>
       <label class="field"><span>Note</span><textarea id="edit-note" rows="5"></textarea></label>
       <details class="more" id="edit-meta">
@@ -588,6 +600,13 @@ const UI_KEY = 'papers-dashboard:ui';
 const API = 'https://api.github.com';
 const STATUSES = ['unread', 'reading', 'read'];
 const STATUS_LABEL = { unread: 'Unread', reading: 'Reading', read: 'Read' };
+const COURSE_STATUS_LABEL = { unread: 'Not started', reading: 'In progress', read: 'Done' };
+const TYPES = ['paper', 'book', 'course', 'article'];
+const TYPE_NAME = { paper: ['paper', 'papers'], book: ['book', 'books'], course: ['course', 'courses'], article: ['article', 'articles'], all: ['item', 'items'] };
+const typeOf = p => (TYPES.includes(p.type) ? p.type : 'paper');
+const statusLabel = (st, type) => (type === 'course' ? COURSE_STATUS_LABEL : STATUS_LABEL)[st];
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+function noun(n, type) { const [one, many] = TYPE_NAME[type] || TYPE_NAME.all; return plural(n, one, many); }
 const PAGE = 10;
 
 const DEFAULT_CFG = { owner: '', repo: 'papers', branch: 'main', path: 'data/papers.json', workflow: 'add-paper.yml', token: '' };
@@ -607,6 +626,7 @@ const state = {
   loaded: false,
   q: '', status: 'all', starred: false, tags: new Set(), month: null,
   sort: ui.sort || 'added',
+  type: TYPES.includes(ui.type) ? ui.type : 'all',
   open: new Set(),
   shown: {},           // group key -> number shown
   pendingAdd: null,    // link from ?add=
@@ -864,7 +884,7 @@ function buildRepoForm(form, { onConnected, error, inSettings }) {
       const { papers, missing } = await readFile();
       saveJSON(CFG_KEY, cfg);
       status.className = 'conn-status ok';
-      status.textContent = `Connected · ${plural(papers.length, 'paper')}` + (missing ? ` (${cfg.path} will be created)` : '');
+      status.textContent = `Connected · ${noun(papers.length, 'all')}` + (missing ? ` (${cfg.path} will be created)` : '');
       if (!repo.private) {
         status.className = 'conn-status err';
         status.textContent += ' · Warning: this repository is public, so the data is not private.';
@@ -885,9 +905,10 @@ function haystack(p) {
   return [p.title, (p.authors || []).join(' '), p.abstract, (p.tags || []).join(' '), p.note, p.venue, p.id]
     .filter(Boolean).join(' \n ').toLowerCase();
 }
+function ofType() { return state.type === 'all' ? state.papers : state.papers.filter(p => typeOf(p) === state.type); }
 function filtered({ ignoreStatus = false } = {}) {
   const terms = state.q.toLowerCase().split(/\s+/).filter(Boolean);
-  return state.papers.filter(p => {
+  return ofType().filter(p => {
     if (!ignoreStatus && state.status !== 'all' && (p.status || 'unread') !== state.status) return false;
     if (state.starred && !p.starred) return false;
     if (state.month && monthKey(p.added) !== state.month) return false;
@@ -910,6 +931,7 @@ function sortPapers(list) {
 // =====================================================================
 function render() {
   if (!state.loaded) return;
+  renderTypes();
   renderStats();
   renderChart();
   renderFilters();
@@ -917,8 +939,22 @@ function render() {
   renderTagOptions();
 }
 
+function renderTypes() {
+  const counts = { all: state.papers.length };
+  for (const t of TYPES) counts[t] = state.papers.filter(p => typeOf(p) === t).length;
+  $('#type-seg').replaceChildren(...['all', ...TYPES].map(t => h('button', {
+    type: 'button', 'aria-pressed': String(state.type === t),
+    onclick: () => {
+      state.type = t; ui.type = t; saveJSON(UI_KEY, ui);
+      state.status = 'all'; state.tags.clear(); state.month = null; state.shown = {}; render();
+    },
+  }, t === 'all' ? 'All' : cap(TYPE_NAME[t][1]), h('span', { class: 'count', text: counts[t] }))));
+  $('#list-h').textContent = state.type === 'all' ? 'Everything saved' : `Saved ${TYPE_NAME[state.type][1]}`;
+}
+
 function renderStats() {
-  const ps = state.papers;
+  const ps = ofType();
+  const L = st => statusLabel(st, state.type);
   const count = st => ps.filter(p => (p.status || 'unread') === st).length;
   const tm = thisMonthKey();
   const thisMonth = ps.filter(p => monthKey(p.added) === tm).length;
@@ -929,15 +965,15 @@ function renderStats() {
     h('div', { class: 'num', text: num.toLocaleString() }),
     h('div', { class: 'sub', text: sub || ' ' }));
   $('#stats').replaceChildren(
-    tile('Papers', ps.length, review ? `${review} need review` : `${ps.filter(p => p.starred).length} starred`),
-    tile('Unread', count('unread'), ps.length ? `${Math.round(100 * count('unread') / ps.length)}% of all` : ''),
-    tile('Read', count('read'), `${count('reading')} in progress`),
+    tile(cap(TYPE_NAME[state.type][1]), ps.length, review ? `${review} need review` : `${ps.filter(p => p.starred).length} starred`),
+    tile(L('unread'), count('unread'), ps.length ? `${Math.round(100 * count('unread') / ps.length)}% of all` : ''),
+    tile(L('read'), count('read'), `${count('reading')} in progress`),
     tile('Added this month', thisMonth, `${lastMonth} last month`));
 }
 
 function chartData() {
   const counts = new Map();
-  for (const p of state.papers) { const k = monthKey(p.added); if (k !== 'unknown') counts.set(k, (counts.get(k) || 0) + 1); }
+  for (const p of ofType()) { const k = monthKey(p.added); if (k !== 'unknown') counts.set(k, (counts.get(k) || 0) + 1); }
   const end = thisMonthKey();
   let start;
   if (ui.range === 'all') {
@@ -991,7 +1027,7 @@ function renderChart() {
   const bars = s('g');
   const tip = $('#tooltip');
   const showTip = (d, cx, cy) => {
-    tip.replaceChildren(h('strong', { text: plural(d.n, 'paper') }), h('span', { class: 'mono', text: '  ' + monthName(d.key) }));
+    tip.replaceChildren(h('strong', { text: noun(d.n, state.type) }), h('span', { class: 'mono', text: '  ' + monthName(d.key) }));
     tip.style.left = cx + 'px'; tip.style.top = cy + 'px'; tip.hidden = false;
   };
   data.forEach((d, i) => {
@@ -999,7 +1035,7 @@ function renderChart() {
     const bh = Math.max((d.n / max) * ih, d.n ? 2 : 0);
     const g = s('g', {
       class: 'bar' + (state.month === d.key ? ' selected' : ''), tabindex: '0', role: 'button',
-      'aria-label': `${monthName(d.key)}: ${plural(d.n, 'paper')}`, 'aria-pressed': String(state.month === d.key),
+      'aria-label': `${monthName(d.key)}: ${noun(d.n, state.type)}`, 'aria-pressed': String(state.month === d.key),
     });
     // 2px top corners, square at the baseline.
     const r = Math.min(2, bw / 2, bh);
@@ -1045,13 +1081,13 @@ function renderFilters() {
   seg.replaceChildren(...['all', ...STATUSES].map(st => h('button', {
     type: 'button', 'aria-pressed': String(state.status === st),
     onclick: () => { state.status = st; state.shown = {}; render(); },
-  }, st === 'all' ? 'All' : STATUS_LABEL[st], h('span', { class: 'count', text: counts[st] }))));
+  }, st === 'all' ? 'All' : statusLabel(st, state.type), h('span', { class: 'count', text: counts[st] }))));
 
   $('#starred-toggle').setAttribute('aria-pressed', String(state.starred));
 
   // Tag "chips": plain mono text joined by middle dots.
   const tagCounts = new Map();
-  for (const p of state.papers) for (const t of p.tags || []) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
+  for (const p of ofType()) for (const t of p.tags || []) tagCounts.set(t, (tagCounts.get(t) || 0) + 1);
   const tags = [...tagCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const row = $('#tag-row');
   row.hidden = !tags.length;
@@ -1092,15 +1128,15 @@ function groupsFor(list) {
 function renderList() {
   const list = sortPapers(filtered());
   const root = $('#list');
-  if (!state.papers.length) {
+  if (!ofType().length) {
     root.replaceChildren(h('div', { class: 'empty' },
-      h('h3', { style: 'margin:0;font-family:var(--font-display);font-weight:500;font-size:22px', text: 'No papers yet' }),
+      h('h3', { style: 'margin:0;font-family:var(--font-display);font-weight:500;font-size:22px', text: state.papers.length ? `No ${TYPE_NAME[state.type][1]} yet` : 'Nothing saved yet' }),
       h('p', { class: 'muted', text: 'Add a link with “Add paper” or the bookmarklet (see Settings).' }),
       h('div', {}, h('button', { class: 'btn', type: 'button', onclick: () => openAdd(), text: 'Add paper' }))));
     return;
   }
   if (!list.length) {
-    root.replaceChildren(h('div', { class: 'empty' }, h('p', { class: 'muted', text: 'No papers match these filters.' })));
+    root.replaceChildren(h('div', { class: 'empty' }, h('p', { class: 'muted', text: `No ${TYPE_NAME[state.type][1]} match these filters.` })));
     return;
   }
   const frag = document.createDocumentFragment();
@@ -1109,7 +1145,7 @@ function renderList() {
     const sec = h('section', { class: 'group', 'aria-label': g.title },
       h('div', { class: 'group-head' },
         h('h3', { text: g.title }),
-        h('span', { class: 'meta', text: plural(g.items.length, 'paper') })));
+        h('span', { class: 'meta', text: noun(g.items.length, state.type) })));
     for (const p of g.items.slice(0, shown)) sec.append(paperRow(p));
     if (g.items.length > shown) {
       const more = g.items.length - shown;
@@ -1137,20 +1173,23 @@ function joinDots(parts, cls = 'meta') {
 
 function paperRow(p) {
   const st = STATUSES.includes(p.status) ? p.status : 'unread';
+  const type = typeOf(p);
+  const SL = x => statusLabel(x, type);
   const open = state.open.has(p.id);
   const nextSt = STATUSES[(STATUSES.indexOf(st) + 1) % 3];
   const venueYear = [p.venue, p.year && !/\b(19|20)\d{2}\b/.test(p.venue || '') ? p.year : null].filter(Boolean).join(' ');
   const statusBtn = h('button', {
-    type: 'button', class: `status ${st}`, title: `Mark as ${STATUS_LABEL[nextSt].toLowerCase()}`,
-    'aria-label': `Status: ${STATUS_LABEL[st]}. Mark as ${STATUS_LABEL[nextSt].toLowerCase()}`,
+    type: 'button', class: `status ${st}`, title: `Mark as ${SL(nextSt).toLowerCase()}`,
+    'aria-label': `Status: ${SL(st)}. Mark as ${SL(nextSt).toLowerCase()}`,
     onclick: () => updatePaper(p.id, { status: nextSt }, `Mark as ${nextSt}: ${short(p.title)}`),
-  }, STATUS_LABEL[st]);
+  }, SL(st));
   const row = h('article', { class: 'paper', 'data-open': String(open) });
   const main = h('div', {},
     h('div', { class: 'meta-line' }, ...joinDots([
       statusBtn,
+      state.type === 'all' ? h('span', { class: 'type-label', text: cap(type) }) : null,
       venueYear || null,
-      p.id,
+      type === 'paper' || /^(arxiv|doi|openreview|acl|pmid):/.test(p.id) ? p.id : null,
       p.needs_review ? h('span', { class: 'flag', text: 'needs review' }) : null,
     ])),
     h('h4', {}, extLink(p.url || p.source_url, p.title || p.source_url || p.id)),
@@ -1170,7 +1209,7 @@ function paperRow(p) {
       onclick: () => { open ? state.open.delete(p.id) : state.open.add(p.id); row.replaceWith(paperRow(p)); },
     }, icon('i-chev', 'chev')));
   row.append(main, side);
-  if (open) row.append(paperDetails(p, st));
+  if (open) row.append(paperDetails(p, st, type));
   return row;
 }
 function joinTags(tags) {
@@ -1186,13 +1225,13 @@ function joinTags(tags) {
 }
 function short(t) { t = t || ''; return t.length > 60 ? t.slice(0, 57) + '…' : t; }
 
-function paperDetails(p, st) {
+function paperDetails(p, st, type) {
   const pdf = safeUrl(p.pdf);
   const seg = h('div', { class: 'seg', role: 'group', 'aria-label': 'Status' },
     ...STATUSES.map(x => h('button', {
       type: 'button', 'aria-pressed': String(x === st),
       onclick: () => x !== st && updatePaper(p.id, { status: x }, `Mark as ${x}: ${short(p.title)}`),
-    }, STATUS_LABEL[x])));
+    }, statusLabel(x, type))));
   return h('div', { class: 'details' },
     p.abstract ? h('p', { class: 'abstract', text: p.abstract }) : h('p', { class: 'meta', text: 'No abstract.' }),
     p.note ? h('p', { class: 'note', text: p.note }) : null,
@@ -1200,7 +1239,7 @@ function paperDetails(p, st) {
       seg,
       pdf ? h('a', { class: 'btn small ext', href: pdf, target: '_blank', rel: 'noopener noreferrer', text: 'Open PDF' }) : null,
       h('button', { type: 'button', class: 'btn small', onclick: async (e) => {
-        await copyText(bibtex(p)); flash(e.currentTarget, 'Copied');
+        const btn = e.currentTarget; await copyText(bibtex(p)); flash(btn, 'Copied');
       } }, 'Copy BibTeX'),
       h('button', { type: 'button', class: 'btn small', onclick: () => openEdit(p.id) }, 'Edit tags & note'),
       h('button', { type: 'button', class: 'btn small danger', onclick: () => {
@@ -1239,6 +1278,17 @@ function bibKey(p, used) {
   return key;
 }
 function bibtex(p, used) {
+  const kind = typeOf(p);
+  if (kind !== 'paper' && !(kind === 'book' && !p.doi && p.arxiv)) {
+    const f = [['title', `{${bibEscape(p.title || '')}}`]];
+    if (p.authors && p.authors.length) f.push(['author', `{${p.authors.map(bibEscape).join(' and ')}}`]);
+    if (p.year) f.push(['year', `{${p.year}}`]);
+    if (p.venue) f.push([kind === 'book' ? 'publisher' : 'howpublished', `{${bibEscape(p.venue)}}`]);
+    if (p.doi) f.push(['doi', `{${p.doi}}`]);
+    if (p.url) f.push(['url', `{${p.url}}`]);
+    if (kind !== 'book') f.push(['note', `{${cap(kind)}, accessed ${fmtDate(p.added)}}`]);
+    return `@${kind === 'book' ? 'book' : 'misc'}{${bibKey(p, used)},\n${f.map(([k, v]) => `  ${k} = ${v}`).join(',\n')}\n}\n`;
+  }
   const venue = p.venue || '';
   const isArxiv = !p.doi && p.arxiv && (!venue || /^arxiv/i.test(venue));
   const conf = /proc|conf|workshop|symposium|neurips|nips|icml|iclr|cvpr|iccv|eccv|acl|emnlp|naacl|aaai|ijcai|kdd|sigir|chi|osdi|sosp|nsdi|eurosys|asplos|isca|micro|sigmod|vldb|www|interspeech|icassp|uai|aistats|colt|corl|rss|icra|iros/i.test(venue);
@@ -1261,6 +1311,8 @@ function openAdd(link) {
   const dlg = $('#add-dlg');
   $('#add-form').reset();
   if (link) $('#add-urls').value = link;
+  $('#add-type').value = TYPES.includes(ui.addType) ? ui.addType : 'paper';
+  fillStatus($('#add-status'), $('#add-type').value);
   $('#add-dupes').hidden = true;
   dlg.showModal();
   checkDupes();
@@ -1287,6 +1339,12 @@ function checkDupes() {
   el.textContent = dupes.length ? `${plural(dupes.length, 'link')} already saved; tags and notes will be merged.` : '';
 }
 $('#add-urls').addEventListener('input', checkDupes);
+function fillStatus(sel, type) {
+  const cur = sel.value || 'unread';
+  sel.replaceChildren(...STATUSES.map(st => h('option', { value: st, text: statusLabel(st, type) })));
+  sel.value = cur;
+}
+$('#add-type').addEventListener('change', e => fillStatus($('#add-status'), e.target.value));
 
 $('#add-dlg').addEventListener('close', async () => {
   if ($('#add-dlg').returnValue !== 'ok') return;
@@ -1297,8 +1355,10 @@ $('#add-dlg').addEventListener('close', async () => {
     tags: $('#add-tags').value.trim(),
     note: $('#add-note').value.trim(),
     status: $('#add-status').value,
+    type: $('#add-type').value,
     request_id: 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
   };
+  ui.addType = inputs.type; saveJSON(UI_KEY, ui);
   startJob(inputs, urls.length);
 });
 $('#add-form').addEventListener('submit', (e) => {
@@ -1307,17 +1367,25 @@ $('#add-form').addEventListener('submit', (e) => {
 
 async function startJob(inputs, n) {
   const card = h('div', { class: 'job', role: 'status' });
-  const title = h('strong', { style: 'font-weight:500', text: `Fetching metadata for ${plural(n, 'paper')}` });
+  const title = h('strong', { style: 'font-weight:500', text: `Fetching metadata for ${noun(n, inputs.type)}` });
   const sub = h('span', { class: 'meta', text: 'Starting workflow…' });
   const close = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Dismiss', onclick: () => card.remove() }, icon('i-x'));
   const link = h('span');
   card.append(h('div', { class: 'row' }, title, close), h('div', { class: 'bar' }), h('div', { class: 'row' }, sub, link));
   $('#dock').append(card);
   const since = new Date(Date.now() - 60_000).toISOString();
+  const dispatch = body => gh(`${repoPath()}/actions/workflows/${encodeURIComponent(cfg.workflow)}/dispatches`, {
+    method: 'POST', body: JSON.stringify({ ref: cfg.branch, inputs: body }),
+  });
   try {
-    await gh(`${repoPath()}/actions/workflows/${encodeURIComponent(cfg.workflow)}/dispatches`, {
-      method: 'POST', body: JSON.stringify({ ref: cfg.branch, inputs }),
-    });
+    try { await dispatch(inputs); }
+    catch (e) {
+      // A workflow from before item types rejects the unknown `type` input.
+      if (e.status !== 422 || !/type/.test(e.message)) throw e;
+      const { type, ...rest } = inputs;
+      await dispatch(rest);
+      toast('The add-paper workflow in your data repo has no "type" input yet; saved as papers.', true);
+    }
   } catch (e) {
     card.classList.add('failed');
     sub.textContent = e.status === 404 ? `Workflow ${cfg.workflow} not found on ${cfg.branch}.` : e.status === 403 ? 'The token needs Actions: read/write.' : e.message;
@@ -1341,7 +1409,7 @@ async function startJob(inputs, n) {
       const added = state.papers.filter(p => !before.has(p.id));
       const review = added.filter(p => p.needs_review).length;
       card.classList.add('done');
-      title.textContent = added.length ? `Added ${plural(added.length, 'paper')}` : 'Done, nothing new';
+      title.textContent = added.length ? `Added ${noun(added.length, inputs.type)}` : 'Done, nothing new';
       sub.textContent = review ? `${review} saved without metadata (needs review)` : added.length ? short(added[0].title) : 'Already in your history.';
       setTimeout(() => card.remove(), 12000);
     } else {
@@ -1372,6 +1440,7 @@ function openEdit(id) {
   if (!p) return;
   editingId = id;
   $('#edit-paper').textContent = p.title;
+  $('#edit-type').value = typeOf(p);
   $('#edit-tags').value = (p.tags || []).join(', ');
   $('#edit-note').value = p.note || '';
   $('#edit-ttl').value = p.title || '';
@@ -1392,6 +1461,7 @@ $('#edit-dlg').addEventListener('close', () => {
   const p = state.papers.find(x => x.id === editingId);
   if (!p) return;
   const patch = { tags: normTags($('#edit-tags').value), note: $('#edit-note').value.trim() };
+  if ($('#edit-type').value !== typeOf(p)) patch.type = $('#edit-type').value;
   const title = $('#edit-ttl').value.trim();
   const authors = $('#edit-authors').value.split(',').map(x => x.trim()).filter(Boolean);
   const venue = $('#edit-venue').value.trim() || null;
@@ -1416,11 +1486,11 @@ function openSettings() {
   -H "Authorization: Bearer $GH_TOKEN" \\
   -H "Accept: application/vnd.github+json" \\
   https://api.github.com/repos/${cfg.owner || '<user>'}/${cfg.repo || 'papers'}/dispatches \\
-  -d '{"event_type":"add-paper","client_payload":{"urls":"https://arxiv.org/abs/1706.03762","tags":"llm"}}'`;
+  -d '{"event_type":"add-paper","client_payload":{"urls":"https://arxiv.org/abs/1706.03762","type":"paper"}}'`;
   $('#settings-dlg').showModal();
 }
 $('#bookmarklet').addEventListener('click', e => { e.preventDefault(); toast('Drag the button to your bookmarks bar.'); });
-$('#copy-curl').addEventListener('click', async e => { await copyText($('#curl-snippet').textContent); flash(e.currentTarget, 'Copied'); });
+$('#copy-curl').addEventListener('click', async e => { const btn = e.currentTarget; await copyText($('#curl-snippet').textContent); flash(btn, 'Copied'); });
 $('#settings-dlg').addEventListener('click', e => { if (e.target.closest('[data-close]')) $('#settings-dlg').close(); });
 $('#forget-btn').addEventListener('click', () => {
   if (!confirm('Forget the token on this device?')) return;
