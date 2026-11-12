@@ -23,7 +23,8 @@ a token see only the "connect your repo" screen.
 - Stats: total, unread, read (with the number in progress), added this month.
 - "Added per month" chart (last 24 months or all time). Click a bar to filter to that month.
 - Search across titles, authors, abstracts, tags and notes (press `/` to focus it).
-- Filter by status, starred and tags. Sort by date added, publication date or title.
+- Filter by status, starred, needs review and tags. Sort by date added, publication date, title or citations in your library.
+- **Worth reading next**: papers several of your saved papers cite, plus Semantic Scholar recommendations based on what you've read or starred, with Add and Dismiss. Each paper shows "cited by N in library". Both come from `data/insights.json`, written by the Insights workflow in the data repo; this page never contacts Semantic Scholar.
 - History grouped by the month each paper was saved.
 - Per paper: change status, star, open the PDF, copy BibTeX, edit tags, note and metadata, remove.
 - **Add paper** (with a Type field) dispatches the `add-paper.yml` workflow in the data repo and shows its progress.
